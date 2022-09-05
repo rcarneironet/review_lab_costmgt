@@ -1,25 +1,15 @@
-﻿using Azure.Core;
-using Azure.Identity;
-using System.Threading.Tasks;
+﻿namespace services.Token;
 
-namespace services.Token
+public record AzureIdentityTokenRequestModel(string TenantId, string ClientId, string ClientSecret);
+
+public static class AzureIdentityService
 {
-    public class AzureIdentityTokenRequestModel
+    public static async Task<string> GetToken(AzureIdentityTokenRequestModel model)
     {
-        public string TenantId { get; set; }
-        public string ClientId { get; set; }
-        public string ClientSecret { get; set; }
-    }
-
-    public static class AzureIdentityService
-    {
-        public static async Task<string> GetToken(AzureIdentityTokenRequestModel model)
-        {
-            var credentials = new ClientSecretCredential(model.TenantId, model.ClientId, model.ClientSecret);
-            var token = await credentials.GetTokenAsync(
-                new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: model.TenantId)
-                );
-            return token.Token;
-        }
+        var credentials = new ClientSecretCredential(model.TenantId, model.ClientId, model.ClientSecret);
+        var token = await credentials.GetTokenAsync(
+            new TokenRequestContext(new[] { "https://management.azure.com/.default" }, tenantId: model.TenantId)
+            );
+        return token.Token;
     }
 }

@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using services.APIs.CostManagement;
 using services.Dtos;
+using System.Threading.Tasks;
 
 namespace dashboard.Controllers
 {
@@ -14,13 +15,15 @@ namespace dashboard.Controllers
             _logger = logger;
         }
 
-        public IActionResult Index()
+        public async Task<IActionResult> Index()
         {
-            var model = new DashboardViewModel();
-            model.WeeklyBillingList = CostManagementService.GetWeeklyBilling().Result;
-            ViewData["WeeklyBilling"] = model.WeeklyBillingList;
+            var model = new DashboardViewModel
+            {
+                WeeklyBillingList = await CostManagementService.GetWeeklyBillingAsync(),
+                MonthToDateDtoList = await CostManagementService.GetMonthToDateBillingAsync()
+            };
 
-            model.MonthToDateDtoList = CostManagementService.GetMonthToDateBilling().Result;
+            ViewData["WeeklyBilling"] = model.WeeklyBillingList;
             ViewData["MonthToDate"] = model.MonthToDateDtoList;
 
             return View();

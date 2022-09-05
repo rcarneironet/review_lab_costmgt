@@ -1,117 +1,113 @@
-﻿using services.Dtos;
-using services.Email;
-using services.Token;
-using services.Utilities;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Text;
-using System.Text.Json;
-using System.Threading.Tasks;
+﻿namespace services.APIs.CostManagement;
 
-namespace services.APIs.CostManagement
+public static class CostManagementService
 {
-    public static class CostManagementService
+    private static HttpClient _httpClient = null;
+    private readonly static SemaphoreSlim _semaphoreSlim = new(1, 1);
+
+    public static async Task AzureBillingMonthToDateApiFetch()
     {
-        public static async Task AzureBillingMonthToDateApiFetch()
+        if (string.IsNullOrEmpty(Utils.subscriptionIdList))
+            throw new Exception(Constants.SubscriptionEmpty);
+
+        var subscriptionList = Utils.subscriptionIdList.Split(',').ToList();
+
+        if (_httpClient == null)
         {
+            await _semaphoreSlim.WaitAsync();
+            _httpClient = new HttpClient();
+            _semaphoreSlim.Release();
+        }
 
-            if (string.IsNullOrEmpty(Utils.subscriptionIdList))
-                throw new Exception("Subscription list is empty");
+        var jsonContent = new StringContent(
+            GetBillingMonthToDateJson(),
+            Encoding.UTF8,
+            "application/json");
 
-            var subscriptionList = Utils.subscriptionIdList.Split(',').ToList<string>();
+        var token = await AzureIdentityService.GetToken(new (Utils.TenantId, Utils.ClientId, Utils.ClientSecret));
 
-            using var client = new HttpClient();
-            var jsonContent = new StringContent(
-                GetBillingMonthToDateJson(),
-                Encoding.UTF8,
-                "application/json");
+        _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
 
-            var token = await AzureIdentityService.GetToken(new AzureIdentityTokenRequestModel
+        try
+        {
+            foreach (var sub in subscriptionList)
             {
-                TenantId = Utils.TenantId,
-                ClientId = Utils.ClientId,
-                ClientSecret = Utils.ClientSecret
-            });
+                var url = "https://management.azure.com/subscriptions/" + sub + "/providers/Microsoft.CostManagement/query?api-version=2021-10-01";
+                var result = await _httpClient.PostAsync(url, jsonContent);
 
-            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {token}");
+                result.EnsureSuccessStatusCode();
 
-            try
-            {
-                foreach (var sub in subscriptionList)
+                var jsonData = await result.Content.ReadFromJsonAsync<JsonElement>();
+
+                var row = jsonData.GetProperty("properties").GetProperty("rows");
+
+                if (row.ToString() != "[]")
                 {
-                    var url = "https://management.azure.com/subscriptions/" + sub + "/providers/Microsoft.CostManagement/query?api-version=2021-10-01";
-                    var result = await client.PostAsync(url.TrimStart().TrimEnd(), jsonContent);
-                    var jsonData = await result.Content.ReadFromJsonAsync<JsonElement>();
+                    var rows = row.EnumerateArray();
 
-                    if (jsonData.GetProperty("properties").GetProperty("rows").ToString() != "[]")
+                    var billing = new BillingDto
                     {
-                        var rows = jsonData.GetProperty("properties").GetProperty("rows").EnumerateArray();
+                        Date = DateTime.UtcNow.Date,
+                        SubscriptionId = sub,
+                        Value = Math.Round(rows.First().EnumerateArray().ElementAt(0).GetDouble(), 2),
+                        IsUpdate = false
+                    };
 
-                        var billing = new BillingDto
-                        {
-                            Date = DateTime.Now.Date,
-                            SubscriptionId = sub,
-                            Value = Math.Round(rows.First().EnumerateArray().ElementAt(0).GetDouble(), 2),
-                            IsUpdate = false
-                        };
+                    var service = new CostManagementDataService();
 
-                        var service = new CostManagementDataService();
-
-                        //Check if there is already a cost for the day, if there is, update it, otherwise insert a new value
-                        var todaysValue = await service.GetLatestBillingForToday(sub);
-                        if (todaysValue.SubscriptionId != null)
-                        {
-                            billing.Value = billing.Value;
-                            billing.IsUpdate = true;
-                            //find percentual of increase between last value and current value
-                            billing.PercentChanged = Math.Round(((todaysValue.Value - billing.Value) / billing.Value) * 100, 2);
-                        }
-                        //Save to SQL Database
-                        await service.SaveBilling(billing);
+                    //Check if there is already a cost for the day, if there is, update it, otherwise insert a new value
+                    var todaysValue = await service.GetLatestBillingForTodayAsync(sub);
+                    if (todaysValue.SubscriptionId != null)
+                    {
+                        billing.Value = billing.Value;
+                        billing.IsUpdate = true;
+                        //find percentual of increase between last value and current value
+                        billing.PercentChanged = Math.Round(((todaysValue.Value - billing.Value) / billing.Value) * 100, 2);
                     }
+
+                    //Save to SQL Database
+                    await service.SaveBillingAsync(billing);
                 }
             }
-            catch (Exception)
+        }
+        catch (Exception)
+        {
+            throw;
+        }
+    }
+
+    internal static string GetBillingMonthToDateJson()
+    {
+        return "{ \"type\": \"Usage\", \"timeframe\": \"BillingMonthToDate\", \"dataset\": { \"granularity\": \"None\", \"aggregation\": { \"totalCost\": { \"name\": \"PreTaxCost\", \"function\": \"Sum\"}  } } }";
+    }
+
+    public static async Task<List<WeeklyBillingDto>> GetWeeklyBillingAsync()
+    {
+        var service = new CostManagementDataService();
+        return await service.GetWeeklyBillingAsync();
+    }
+
+    public static async Task<List<MonthToDateDto>> GetMonthToDateBillingAsync()
+    {
+        var service = new CostManagementDataService();
+        return await service.GetMonthToDateBillingAsync();
+    }
+
+    public static async ValueTask NotifyConsumptionIncreaseByEmailAsync()
+    {
+        var service = new CostManagementDataService();
+        var notifications = await service.NotifyConsumptionIncreaseByEmailAsync();
+
+        foreach (var item in notifications)
+        {
+            if (!item.IsEmailSent && item.ValueChangePercent >= Utils.PercentageWarning)
             {
-                throw;
+
+                await new EmailService().SendEmailAsync(item.SubscriptionId, item.ValueChangePercent.ToString());
+                await new CostManagementDataService().UpdateEmailNotificationAsync(item.Id);
             }
-        }
-
-        internal static string GetBillingMonthToDateJson()
-        {
-            return "{ \"type\": \"Usage\", \"timeframe\": \"BillingMonthToDate\", \"dataset\": { \"granularity\": \"None\", \"aggregation\": { \"totalCost\": { \"name\": \"PreTaxCost\", \"function\": \"Sum\"}  } } }";
-        }
-
-        public static async Task<List<WeeklyBillingDto>> GetWeeklyBilling()
-        {
-            var service = new CostManagementDataService();
-            return await service.GetWeeklyBilling();
-        }
-
-        public static async Task<List<MonthToDateDto>> GetMonthToDateBilling()
-        {
-            var service = new CostManagementDataService();
-            return await service.GetMonthToDateBilling();
-        }
-
-        public static void NotifyConsumptionIncreaseByEmail()
-        {
-            var service = new CostManagementDataService();
-            var notifications = service.NotifyConsumptionIncreaseByEmail();
-
-            foreach (var item in notifications)
-            {
-                if (!item.IsEmailSent && item.ValueChangePercent >= Utils.PercentageWarning)
-                {
-                    new EmailService().SendEmail(item.SubscriptionId, item.ValueChangePercent.ToString());
-                    new CostManagementDataService().UpdateEmailNotification(item.Id);
-                }
-            }
-
         }
 
     }
+
 }

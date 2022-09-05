@@ -33,7 +33,9 @@ namespace dashboard
         private void RunMailWarningWorker(object state)
         {
             _logger.LogWarning("API Service: Executou chamada de API RunMailWarningWorker.");
-            CostManagementService.NotifyConsumptionIncreaseByEmail();
+
+            var task = Task.Run(() => CostManagementService.NotifyConsumptionIncreaseByEmailAsync());
+            task.Wait();
         }
 
         public Task StopAsync(CancellationToken cancellationToken)

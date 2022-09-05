@@ -1,4 +1,5 @@
-﻿using services.Dtos;
+﻿using services.Database;
+using services.Dtos;
 using services.Utilities;
 using System;
 using System.Collections.Generic;
@@ -10,13 +11,13 @@ namespace services.APIs.CostManagement
 {
     public class CostManagementDataService
     {
-        public async Task<List<WeeklyBillingDto>> GetWeeklyBilling()
+        public async Task<List<WeeklyBillingDto>> GetWeeklyBillingAsync()
         {
-            List<WeeklyBillingDto> list = new List<WeeklyBillingDto>();
+            var list = new List<WeeklyBillingDto>();
 
             try
             {
-                using SqlConnection conn = new SqlConnection(Utils.DbConnectionString);
+                using var conn = new SqlConnection(Utils.DbConnectionString);
                 await conn.OpenAsync();
 
                 SqlCommand cmd = new SqlCommand("select top 8 sum(value) as total, date from [dbo].[billing] group by date order by date", conn);
@@ -39,7 +40,7 @@ namespace services.APIs.CostManagement
             }
         }
 
-        public async Task<BillingDto> GetLatestBillingForToday(string subscriptionId)
+        public async Task<BillingDto> GetLatestBillingForTodayAsync(string subscriptionId)
         {
 
             if (string.IsNullOrEmpty(subscriptionId))
@@ -72,7 +73,7 @@ namespace services.APIs.CostManagement
             }
         }
 
-        public async Task<List<MonthToDateDto>> GetMonthToDateBilling()
+        public async Task<List<MonthToDateDto>> GetMonthToDateBillingAsync()
         {
             List<MonthToDateDto> list = new List<MonthToDateDto>();
 
@@ -103,7 +104,7 @@ namespace services.APIs.CostManagement
             }
         }
 
-        public async Task SaveBilling(BillingDto dto)
+        public async Task SaveBillingAsync(BillingDto dto)
         {
             try
             {
@@ -138,18 +139,19 @@ namespace services.APIs.CostManagement
             }
         }
 
-        public List<BillingLogDto> NotifyConsumptionIncreaseByEmail()
+        const string QueryConsumption = "SELECT id, date, subscriptionId, value, valuechangepercent, emailsent FROM billinglog WHERE emailsent = 0";
+        public async ValueTask<List<BillingLogDto>> NotifyConsumptionIncreaseByEmailAsync()
         {
-            List<BillingLogDto> list = new List<BillingLogDto>();
+            var list = new List<BillingLogDto>(10);
 
             try
             {
-                using SqlConnection conn = new SqlConnection(Utils.DbConnectionString);
-                conn.Open();
+                using var connection = DatabaseFactory.GetConnection();
+                await connection.OpenAsync();
 
-                SqlCommand cmd = new SqlCommand("select id, date, subscriptionId, value, valuechangepercent, emailsent from [dbo].[billinglog] where emailsent = 0", conn);
+                var cmd = new SqlCommand(QueryConsumption, connection);
 
-                using SqlDataReader reader = cmd.ExecuteReader();
+                using var reader = cmd.ExecuteReader();
 
                 while (reader.Read())
                 {
@@ -163,6 +165,9 @@ namespace services.APIs.CostManagement
                         IsEmailSent = reader.GetBoolean(5)
                     });
                 }
+
+                await connection.CloseAsync();
+
                 return list;
             }
             catch (System.Exception)
@@ -171,21 +176,21 @@ namespace services.APIs.CostManagement
             }
         }
 
-        public void UpdateEmailNotification(Guid id)
+        const string StatementUpdate = "UPDATE [billinglog] SET emailsent = 1 WHERE id = @id;";
+
+        public async ValueTask UpdateEmailNotificationAsync(Guid id)
         {
             try
             {
 
-                using SqlConnection conn = new SqlConnection(Utils.DbConnectionString);
-                conn.OpenAsync();
+                using var conn = new SqlConnection(Utils.DbConnectionString);
+                await conn.OpenAsync();
+                using var command = conn.CreateCommand();
+                command.CommandText = StatementUpdate;
+                command.Parameters.Add("@id", SqlDbType.UniqueIdentifier).Value = id;
 
-                var sql = "update [dbo].[billinglog] set emailsent = 1 where id = @id;";
-
-                using SqlCommand cmd = new SqlCommand(sql, conn);
-                cmd.Parameters.Add("@id", SqlDbType.UniqueIdentifier).Value = id;
-
-                cmd.CommandType = CommandType.Text;
-                cmd.ExecuteNonQuery();
+                command.CommandType = CommandType.Text;
+                await command.ExecuteNonQueryAsync();
             }
             catch (System.Exception)
             {
