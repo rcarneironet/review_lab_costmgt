@@ -28,10 +28,12 @@ namespace dashboard
             return Task.CompletedTask;
         }
 
-        private async void RunCostManagementService(object state)
+        private void RunCostManagementService(object state)
         {
             _logger.LogWarning("API Service CostManagementWorker: Executou chamada de API GetBillingMonthToDate.");
-            await CostManagementService.AzureBillingMonthToDateApiFetch();
+
+            var task = Task.Run(async () => await CostManagementService.AzureBillingMonthToDateApiFetch());
+            task.Wait();
         }
 
         public Task StopAsync(CancellationToken cancellationToken)

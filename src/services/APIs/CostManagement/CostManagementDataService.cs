@@ -1,11 +1,6 @@
 ﻿using services.Database;
-using services.Dtos;
-using services.Utilities;
-using System;
-using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
-using System.Threading.Tasks;
 
 namespace services.APIs.CostManagement
 {
@@ -17,10 +12,10 @@ namespace services.APIs.CostManagement
 
             try
             {
-                using var conn = new SqlConnection(Utils.DbConnectionString);
-                await conn.OpenAsync();
+                using var connection = DatabaseFactory.GetConnection();
+                await connection.OpenAsync();
 
-                SqlCommand cmd = new SqlCommand("select top 8 sum(value) as total, date from [dbo].[billing] group by date order by date", conn);
+                SqlCommand cmd = new SqlCommand("select top 8 sum(value) as total, date from [dbo].[billing] group by date order by date", connection);
 
                 using SqlDataReader reader = cmd.ExecuteReader();
 
@@ -48,10 +43,10 @@ namespace services.APIs.CostManagement
 
             try
             {
-                using SqlConnection conn = new SqlConnection(Utils.DbConnectionString);
-                await conn.OpenAsync();
+                using var connection = DatabaseFactory.GetConnection();
+                await connection.OpenAsync();
 
-                SqlCommand cmd = new SqlCommand("select date, subscriptionId, value from billing where subscriptionId = @subId and date = @today", conn);
+                SqlCommand cmd = new SqlCommand("select date, subscriptionId, value from billing where subscriptionId = @subId and date = @today", connection);
                 cmd.Parameters.Add("@subId", SqlDbType.VarChar).Value = subscriptionId;
                 cmd.Parameters.Add("@today", SqlDbType.Date).Value = DateTime.Now.Date;
 
@@ -79,10 +74,10 @@ namespace services.APIs.CostManagement
 
             try
             {
-                using SqlConnection conn = new SqlConnection(Utils.DbConnectionString);
-                await conn.OpenAsync();
+                using var connection = DatabaseFactory.GetConnection();
+                await connection.OpenAsync();
 
-                SqlCommand cmd = new SqlCommand("select subscriptionId, Value, DATENAME(month, getdate()) as Month from [dbo].[billing] where date = @today", conn);
+                SqlCommand cmd = new SqlCommand("select subscriptionId, Value, DATENAME(month, getdate()) as Month from [dbo].[billing] where date = @today", connection);
                 cmd.Parameters.Add("@today", SqlDbType.Date).Value = DateTime.Now.Date;
 
                 using SqlDataReader reader = cmd.ExecuteReader();
@@ -109,8 +104,8 @@ namespace services.APIs.CostManagement
             try
             {
 
-                using SqlConnection conn = new SqlConnection(Utils.DbConnectionString);
-                await conn.OpenAsync();
+                using var connection = DatabaseFactory.GetConnection();
+                await connection.OpenAsync();
 
                 var sql = string.Empty;
                 if (!dto.IsUpdate)
@@ -124,7 +119,7 @@ namespace services.APIs.CostManagement
                     sql += " insert into [dbo].[billinglog] values (NEWID(), getdate(), @subscriptionId, @value, @valuechangepercent, 0);";
                 }
 
-                using SqlCommand cmd = new SqlCommand(sql, conn);
+                using SqlCommand cmd = new SqlCommand(sql, connection);
                 cmd.Parameters.Add("@date", SqlDbType.Date).Value = dto.Date;
                 cmd.Parameters.Add("@subscriptionId", SqlDbType.VarChar, 50).Value = dto.SubscriptionId;
                 cmd.Parameters.Add("@value", SqlDbType.Float).Value = dto.Value;
@@ -183,9 +178,9 @@ namespace services.APIs.CostManagement
             try
             {
 
-                using var conn = new SqlConnection(Utils.DbConnectionString);
-                await conn.OpenAsync();
-                using var command = conn.CreateCommand();
+                using var connection = DatabaseFactory.GetConnection();
+                await connection.OpenAsync();
+                using var command = connection.CreateCommand();
                 command.CommandText = StatementUpdate;
                 command.Parameters.Add("@id", SqlDbType.UniqueIdentifier).Value = id;
 

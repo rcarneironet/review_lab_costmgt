@@ -19,6 +19,5 @@
 
         public const int RunCostManagemementApiInSeconds = 3600; //seconds to run the job
         public const int RunEmailRescheduleInSeconds = 3600; //seconds to run the job
-
     }
 }

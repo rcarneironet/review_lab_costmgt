@@ -50,7 +50,8 @@ public static class CostManagementService
                         Date = DateTime.UtcNow.Date,
                         SubscriptionId = sub,
                         Value = Math.Round(rows.First().EnumerateArray().ElementAt(0).GetDouble(), 2),
-                        IsUpdate = false
+                        IsUpdate = false,
+                        PercentChanged = 0
                     };
 
                     var service = new CostManagementDataService();
@@ -62,7 +63,7 @@ public static class CostManagementService
                         billing.Value = billing.Value;
                         billing.IsUpdate = true;
                         //find percentual of increase between last value and current value
-                        billing.PercentChanged = Math.Round(((todaysValue.Value - billing.Value) / billing.Value) * 100, 2);
+                        billing.PercentChanged = (billing.Value > 0 ? Math.Round(((todaysValue.Value - billing.Value) / billing.Value) * 100, 2) : 0);
                     }
 
                     //Save to SQL Database

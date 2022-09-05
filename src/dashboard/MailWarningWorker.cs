@@ -12,8 +12,6 @@ namespace dashboard
     {
         private readonly ILogger<MailWarningWorker> _logger;
         private Timer _timer = null;
-        //private const int _secondsToRun = 3600 * 4; //4 horas
-        private const int _secondsToRun = 3600;
 
         public MailWarningWorker(ILogger<MailWarningWorker> logger)
         {
